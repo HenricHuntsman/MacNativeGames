@@ -29,6 +29,8 @@ jobs:
       - name: Install Linux test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libsdl2-dev libvulkan-dev mesa-vulkan-drivers libopus-dev libvpx-dev libvorbis-dev libogg-dev libzstd-dev
+          sudo apt-get install -y build-essential clang zlib1g-dev pkg-config libsdl2-dev libvulkan-dev mesa-vulkan-drivers libopus-dev libvpx-dev libvorbis-dev libogg-dev libzstd-dev
       - name: Run game-data-free Linux foundation tests
         run: bash linux_port/verify_foundation.sh
+      - name: Build Linux NativeAOT SPIR-V translator
+        run: make -C linux_port shader-service-linux
