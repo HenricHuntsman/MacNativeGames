@@ -155,8 +155,9 @@ def audit():
         print(f'  {path}: {count}')
     print(f'Mac builder markers: build_app.py has {build_app.count("xcrun ")} xcrun and {build_app.count("codesign")} codesign references; TOTK Makefile has {totk_make.count("xcrun ")} xcrun and {totk_make.count("-framework")} framework link flags')
     print('Already integrated: SDL audio callback -> TOTK mixer ring (Linux syntax-tested).')
+    print('Translator: Linux NativeAOT build target available; --serve emits SPIR-V and reflection, no MSL conversion.')
     print('Still standalone: vm_linux helpers, SDL gamepad adapter, Vulkan clear/readback probe.')
-    print('Still missing: Linux Horizon service/loader integration, Cocoa/input replacement, full NVN-to-Vulkan renderer, Linux shader translator build, and ARM64-to-x86_64 execution.')
+    print('Still missing: synthetic shader-to-SPIR-V regression, Linux Horizon service/loader integration, Cocoa/input replacement, full NVN-to-Vulkan renderer, and ARM64-to-x86_64 execution.')
     return 0
 
 

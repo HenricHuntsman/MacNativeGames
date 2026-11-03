@@ -9,7 +9,7 @@ vk_clear: vk_clear.c
 clean:
 	rm -f vk_clear platform/vm_test platform/audio_test platform/gamepad_test vulkan/clear_probe
 
-.PHONY: clean test test-audio test-gamepad test-vulkan test-runtime-audio
+.PHONY: clean test test-audio test-gamepad test-vulkan test-runtime-audio shader-service-linux
 
 platform/vm_test: platform/vm_test.c platform/vm_linux.c platform/vm_linux.h
 	$(CC) $(CFLAGS) -o $@ platform/vm_test.c platform/vm_linux.c
@@ -41,3 +41,6 @@ test-vulkan: vulkan/clear_probe
 
 test-runtime-audio:
 	$(CC) $(CFLAGS) -std=gnu11 -Werror -fsyntax-only ../games/totk/runtime/audio_mixer.c -I../games/totk/runtime -I../games/totk/third_party/d2r_gfx/gfx/nvn/include
+
+shader-service-linux:
+	bash build_shader_service.sh
