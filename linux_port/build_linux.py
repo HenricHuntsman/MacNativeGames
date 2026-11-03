@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""Linux builder for MacNativeGames, step 1: `check` detects the system and says what the port can and cannot do on it.
+build_app.py stays the Mac builder. Its stages 1 (code) and 2 (data and fonts) are Python and C and carry over, stage 3
+swaps the Metal steps for SPIR-V, and stage 4 writes a folder instead of a signed .app."""
+import argparse, os, platform, re, shutil, subprocess, sys
+from pathlib import Path
+
+NEED_DISK_GB = {'base': 25, 'with update': 40}   # the numbers the Mac guide gives for a fresh build
+
+
+def sh(*cmd):
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+        return r.stdout.strip() if r.returncode == 0 else ''
+    except (OSError, subprocess.SubprocessError):
+        return ''
+
+
+def pkg_config(name):
+    return sh('pkg-config', '--modversion', name) if shutil.which('pkg-config') else ''
+
+
+def memory_gb():
+    m = re.search(r'MemTotal:\s+(\d+) kB', Path('/proc/meminfo').read_text())
+    return int(m.group(1)) / 1048576 if m else 0.0
+
+
+def distro():
+    try:
+        return re.search(r'PRETTY_NAME="?([^"\n]+)', Path('/etc/os-release').read_text()).group(1)
+    except (OSError, AttributeError):
+        return 'unknown'
+
+
+def gpus():
+    out = sh('vulkaninfo', '--summary')
+    return re.findall(r'deviceName\s*=\s*(.+)', out)
+
+
+def check(work):
+    rows = []   # (status, item, detail); status is ok, warn or fail
+
+    def add(status, item, detail):
+        rows.append((status, item, detail))
+
+    if platform.system() != 'Linux':
+        add('fail', 'OS', f'{platform.system()}: this script is for Linux, build_app.py is the Mac builder')
+    arch = platform.machine()
+    add('ok', 'OS', f'{distro()}, kernel {platform.release()}')
+    if arch in ('aarch64', 'arm64'):
+        add('ok', 'CPU', f'{arch}: the game\'s ARM64 code can run directly, as on Apple silicon')
+    else:
+        add('fail', 'CPU', f'{arch}: the game\'s ARM64 code cannot run directly; an ARM64-to-{arch} translator is needed, '
+                           'and this project has none')
+    ram = memory_gb()
+    add('ok' if ram >= 16 else 'warn', 'Memory', f'{ram:.1f} GB' + ('' if ram >= 16 else ' (the Mac guide recommends 16 GB)'))
+    free = shutil.disk_usage(work if work.exists() else work.parent).free / 1e9
+    need = NEED_DISK_GB['base']
+    add('ok' if free >= NEED_DISK_GB['with update'] else 'warn' if free >= need else 'fail', 'Disk',
+        f'{free:.0f} GB free for {work} (needs {need} GB, {NEED_DISK_GB["with update"]} GB with an update)')
+
+    v = sys.version_info
+    add('ok' if v >= (3, 12) else 'fail', 'Python', f'{v.major}.{v.minor}.{v.micro} (the Mac build wants 3.14 for zstd in the standard library)'
+        if v < (3, 14) else f'{v.major}.{v.minor}.{v.micro}')
+    for tool, why in (('clang', 'compile the runtime and SPIRV-Cross'), ('make', 'build hactool'), ('pkg-config', 'find libraries')):
+        add('ok' if shutil.which(tool) else 'fail', tool, shutil.which(tool) or f'missing: needed to {why}')
+    add('ok' if shutil.which('dotnet') else 'warn', 'dotnet', shutil.which('dotnet') or
+        'missing: the shader translator ships prebuilt for macOS only; a Linux build needs the .NET SDK (NativeAOT)')
+
+    for lib, pkg in (('SDL2', 'sdl2'), ('Vulkan', 'vulkan'), ('Opus', 'opus'), ('libvpx', 'vpx')):
+        ver = pkg_config(pkg)
+        add('ok' if ver else 'fail', lib, ver or f'missing development package for {pkg} (Debian/Ubuntu: apt install libsdl2-dev libvulkan-dev libopus-dev libvpx-dev)')
+
+    names = gpus()
+    if names:
+        add('ok', 'GPU (Vulkan)', '; '.join(names))
+    elif Path('/dev/dri').exists():
+        add('warn', 'GPU (Vulkan)', 'a /dev/dri exists but vulkaninfo found no device (install vulkan-tools and the Mesa or NVIDIA driver)')
+    else:
+        add('fail', 'GPU (Vulkan)', 'no /dev/dri: no graphics device (a container or a remote machine?)')
+    if Path('/dev/snd').exists() or shutil.which('pipewire') or shutil.which('pulseaudio'):
+        add('ok', 'Audio', 'ALSA, PipeWire or PulseAudio found')
+    else:
+        add('warn', 'Audio', 'no sound server or /dev/snd found')
+    display = os.environ.get('WAYLAND_DISPLAY') or os.environ.get('DISPLAY')
+    add('ok' if display else 'warn', 'Display', display or 'no WAYLAND_DISPLAY or DISPLAY: no desktop session in this shell')
+
+    icon = {'ok': 'OK  ', 'warn': 'WARN', 'fail': 'FAIL'}
+    for status, item, detail in rows:
+        print(f'[{icon[status]}] {item:<13} {detail}')
+    fails = [r for r in rows if r[0] == 'fail']
+    print()
+    if not fails:
+        print('This system meets what the Linux port needs. The port itself is not finished: the Vulkan backend is still to be written.')
+    else:
+        print(f'{len(fails)} blocking item(s) above.')
+    return 1 if fails else 0
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__.split('\n')[0])
+    sub = p.add_subparsers(dest='command', required=True)
+    c = sub.add_parser('check', help='detect this system and report what the port needs')
+    c.add_argument('--work', type=Path, default=Path.home() / 'MacNativeGames-work', help='where the build would write (disk space is checked here)')
+    args = p.parse_args()
+    return check(args.work)
+
+
+if __name__ == '__main__':
+    sys.exit(main())
