@@ -1,0 +1,36 @@
+name: Linux port foundation (headless)
+
+on:
+  push:
+    paths:
+      - 'linux_port/**'
+      - 'games/totk/runtime/controller_map.h'
+      - 'games/totk/runtime/gamepad_layout.h'
+      - '.github/workflows/linux-port-foundation.yml'
+  pull_request:
+    paths:
+      - 'linux_port/**'
+      - 'games/totk/runtime/controller_map.h'
+      - 'games/totk/runtime/gamepad_layout.h'
+      - '.github/workflows/linux-port-foundation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  foundation:
+    name: Compile and run Linux platform smoke tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+          submodules: false
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libsdl2-dev libvulkan-dev
+      - name: Run headless regression tests and compile Vulkan example
+        run: bash linux_port/verify_foundation.sh
