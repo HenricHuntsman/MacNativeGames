@@ -7,6 +7,12 @@ vk_clear: vk_clear.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDLIBS)
 
 clean:
-	rm -f vk_clear
+	rm -f vk_clear platform/vm_test
 
 .PHONY: clean
+
+platform/vm_test: platform/vm_test.c platform/vm_linux.c platform/vm_linux.h
+	$(CC) $(CFLAGS) -o $@ platform/vm_test.c platform/vm_linux.c
+
+test: platform/vm_test
+	./platform/vm_test
