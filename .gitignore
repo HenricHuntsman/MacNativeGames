@@ -30,3 +30,4 @@ games/totk/scripts/shader_inventory/bin/
 ultracode.md
 linux_port/vk_clear
 linux_port/platform/vm_test
+linux_port/platform/audio_test
