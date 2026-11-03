@@ -1,6 +1,5 @@
 #include "gamepad_sdl.h"
 #include "../../games/totk/runtime/controller_map.h"
-#include "../../games/totk/runtime/gamepad_layout.h"
 #include <SDL2/SDL.h>
 #include <math.h>
 #include <stdio.h>
@@ -12,6 +11,8 @@ struct LinuxGamepad {
     int owns_subsystem;
     uint16_t map[CONTROLLER_BUTTONS];
     uint8_t modes[CONTROLLER_BUTTONS];
+    uint64_t physical_prev, tap_until[CONTROLLER_BUTTONS];
+    uint8_t toggle_on[CONTROLLER_BUTTONS], toggle_moved[CONTROLLER_BUTTONS];
     char name[128];
 };
 
@@ -25,16 +26,8 @@ static int32_t axis_value(Sint16 value) {
     return normalized < 0 ? -result : result;
 }
 
-static int face_by_position(SDL_GameController *controller) {
-    const char *name = SDL_GameControllerName(controller);
-    const char *setting = getenv("TOTK_FACE_BUTTONS");
-    if (setting && !strcmp(setting, "label")) return 0;
-    if (setting && !strcmp(setting, "position")) return 1;
-    SDL_GameControllerType type = SDL_GameControllerGetType(controller);
-    if (type == SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_PRO || type == SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_LEFT ||
-        type == SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT || type == SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_PAIR)
-        return 0;
-    return gamepad_face_by_position(name, name);
+static uint64_t face_button_bits(int a, int b, int x, int y) {
+    return (a ? 1ull << 0 : 0) | (b ? 1ull << 1 : 0) | (x ? 1ull << 2 : 0) | (y ? 1ull << 3 : 0);
 }
 
 static int open_first(LinuxGamepad *g) {
@@ -65,6 +58,32 @@ static void load_map(LinuxGamepad *g) {
     if (line) { fprintf(stderr, "[input] %s line %d: %s\n", path, line, error); controller_map_default(g->map, g->modes); }
 }
 
+static uint64_t mapped_buttons(LinuxGamepad *g, uint64_t physical, int moving, int connected) {
+    uint64_t now = SDL_GetTicks64(), edges = physical & ~g->physical_prev, synthetic = 0, suppressed = 0;
+    g->physical_prev = physical;
+    for (int i = 0; i < CONTROLLER_BUTTONS; i++) {
+        uint64_t bit = 1ull << i;
+        int kind = controller_mode_kind(g->modes[i]);
+        if (kind == CONTROLLER_TAP && (edges & bit)) g->tap_until[i] = now + 400;
+        if (kind == CONTROLLER_TOGGLE) {
+            if (edges & bit) { g->toggle_on[i] = !g->toggle_on[i]; g->toggle_moved[i] = moving; }
+            if (g->toggle_on[i] && moving) g->toggle_moved[i] = 1;
+            if (g->toggle_on[i] && ((g->toggle_moved[i] && !moving) || !connected)) g->toggle_on[i] = 0;
+        }
+        if (kind == CONTROLLER_AIM && (physical & bit)) {
+            uint64_t fire = 1ull << controller_mode_fire(g->modes[i]);
+            suppressed |= fire;
+            if (!(physical & fire)) synthetic |= g->map[i];
+        }
+        int active = kind == CONTROLLER_TAP ? now < g->tap_until[i] : kind == CONTROLLER_TOGGLE ? g->toggle_on[i] : 0;
+        if (active) synthetic |= g->map[i];
+    }
+    uint64_t held = physical & ~suppressed;
+    for (int i = 0; i < CONTROLLER_BUTTONS; i++)
+        if (controller_mode_kind(g->modes[i]) != CONTROLLER_HOLD) held &= ~(1ull << i);
+    return controller_map_apply(g->map, held) | synthetic;
+}
+
 LinuxGamepad *gamepad_open(void) {
     LinuxGamepad *g = calloc(1, sizeof *g);
     if (!g) return NULL;
@@ -86,6 +105,10 @@ void gamepad_read(LinuxGamepad *g, LinuxGamepadState *out) {
     if (!g->controller || !SDL_GameControllerGetAttached(g->controller)) {
         if (g->controller) SDL_GameControllerClose(g->controller);
         g->controller = NULL;
+        g->physical_prev = 0;
+        memset(g->tap_until, 0, sizeof g->tap_until);
+        memset(g->toggle_on, 0, sizeof g->toggle_on);
+        memset(g->toggle_moved, 0, sizeof g->toggle_moved);
         open_first(g);
     }
     *out = (LinuxGamepadState){0};
@@ -94,9 +117,8 @@ void gamepad_read(LinuxGamepad *g, LinuxGamepadState *out) {
     SDL_GameController *c = g->controller;
     SDL_GameControllerButton a = SDL_CONTROLLER_BUTTON_A, b = SDL_CONTROLLER_BUTTON_B;
     SDL_GameControllerButton x = SDL_CONTROLLER_BUTTON_X, y = SDL_CONTROLLER_BUTTON_Y;
-    uint64_t physical = gamepad_face_positions(SDL_GameControllerGetButton(c, a), SDL_GameControllerGetButton(c, b),
-                                                SDL_GameControllerGetButton(c, x), SDL_GameControllerGetButton(c, y),
-                                                face_by_position(c));
+    uint64_t physical = face_button_bits(SDL_GameControllerGetButton(c, a), SDL_GameControllerGetButton(c, b),
+                                         SDL_GameControllerGetButton(c, x), SDL_GameControllerGetButton(c, y));
 #define PAD_BUTTON(sdl, bit) do { if (SDL_GameControllerGetButton(c, (sdl))) physical |= 1ull << (bit); } while (0)
     PAD_BUTTON(SDL_CONTROLLER_BUTTON_LEFTSTICK, 4);
     PAD_BUTTON(SDL_CONTROLLER_BUTTON_RIGHTSTICK, 5);
@@ -111,12 +133,12 @@ void gamepad_read(LinuxGamepad *g, LinuxGamepadState *out) {
 #undef PAD_BUTTON
     if (SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 0) physical |= 1ull << 8;
     if (SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 0) physical |= 1ull << 9;
-    out->buttons = controller_map_apply(g->map, physical);
     out->lx = axis_value(SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_LEFTX));
     out->ly = -axis_value(SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_LEFTY));
     out->rx = axis_value(SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_RIGHTX));
     out->ry = -axis_value(SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_RIGHTY));
     out->connected = 1;
+    out->buttons = mapped_buttons(g, physical, out->lx || out->ly, 1);
 }
 
 const char *gamepad_name(const LinuxGamepad *g) { return g && g->controller ? g->name : ""; }

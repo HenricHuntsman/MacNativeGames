@@ -76,14 +76,21 @@ def check(work):
     v = sys.version_info
     add('ok' if v >= (3, 14) else 'fail', 'Python', f'{v.major}.{v.minor}.{v.micro}' +
         ('' if v >= (3, 14) else ' (TOTK build scripts use Python 3.14 standard-library zstd support)'))
-    for tool, why in (('clang', 'compile the runtime and SPIRV-Cross'), ('make', 'build hactool'), ('pkg-config', 'find libraries')):
+    for tool, why in (('clang', 'compile the runtime and SPIRV-Cross'), ('make', 'build hactool'),
+                      ('pkg-config', 'find libraries'), ('git-lfs', 'fetch the repository\'s large-file assets')):
         add('ok' if shutil.which(tool) else 'fail', tool, shutil.which(tool) or f'missing: needed to {why}')
-    add('ok' if shutil.which('dotnet') else 'warn', 'dotnet', shutil.which('dotnet') or
-        'missing: the shader translator ships prebuilt for macOS only; a Linux build needs the .NET SDK (NativeAOT)')
+    sdks = sh('dotnet', '--list-sdks') if shutil.which('dotnet') else ''
+    has_dotnet10 = any(line.split()[0].startswith('10.') for line in sdks.splitlines() if line.split())
+    add('ok' if has_dotnet10 else 'warn', '.NET SDK', sdks.splitlines()[-1] if has_dotnet10 else
+        'missing .NET 10 SDK: needed to build the Linux NativeAOT shader translator; it ships prebuilt for macOS only')
 
-    for lib, pkg in (('SDL2', 'sdl2'), ('Vulkan', 'vulkan'), ('Opus', 'opus'), ('libvpx', 'vpx')):
+    for lib, pkg in (('SDL2', 'sdl2'), ('Vulkan', 'vulkan'), ('Opus', 'opus'), ('libvpx', 'vpx'),
+                     ('libvorbis', 'vorbis'), ('libogg', 'ogg'), ('zstd', 'libzstd')):
         ver = pkg_config(pkg)
-        add('ok' if ver else 'fail', lib, ver or f'missing development package for {pkg} (Debian/Ubuntu: apt install libsdl2-dev libvulkan-dev libopus-dev libvpx-dev)')
+        add('ok' if ver else 'fail', lib, ver or f'missing development package for {pkg} (Debian/Ubuntu: apt install libsdl2-dev libvulkan-dev libopus-dev libvpx-dev libvorbis-dev libogg-dev libzstd-dev)')
+    for tool, pkg in (('glslangValidator', 'glslang-tools'), ('spirv-val', 'spirv-tools')):
+        add('ok' if shutil.which(tool) else 'fail', tool, shutil.which(tool) or
+            f'missing (Debian/Ubuntu package: {pkg})')
 
     names = gpus()
     if names and all(re.search(r'llvmpipe|lavapipe|swiftshader|software rasterizer', name, re.I) for name in names):
