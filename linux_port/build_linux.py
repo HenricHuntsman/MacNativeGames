@@ -4,6 +4,8 @@ build_app.py stays the Mac builder. Its stages 1 (code) and 2 (data and fonts) a
 swaps the Metal steps for SPIR-V, and stage 4 writes a folder instead of a signed .app."""
 import argparse, os, platform, re, shutil, subprocess, sys
 from pathlib import Path
+from urllib.error import URLError
+from urllib.request import urlopen
 
 NEED_DISK_GB = {'base': 25, 'with update': 40}   # the numbers the Mac guide gives for a fresh build
 
@@ -37,6 +39,18 @@ def gpus():
     return re.findall(r'deviceName\s*=\s*(.+)', out)
 
 
+def ollama_status():
+    if not shutil.which('ollama'):
+        return 'not installed; optional local coding assistant, not a game runtime dependency'
+    try:
+        with urlopen('http://127.0.0.1:11434/api/tags', timeout=2) as response:
+            import json
+            names = [m.get('name', '') for m in json.load(response).get('models', [])]
+        return 'running; models: ' + (', '.join(names) if names else 'none pulled')
+    except (OSError, URLError, ValueError):
+        return 'installed but server is not running (optional; start with `ollama serve`)'
+
+
 def check(work):
     rows = []   # (status, item, detail); status is ok, warn or fail
 
@@ -60,8 +74,8 @@ def check(work):
         f'{free:.0f} GB free for {work} (needs {need} GB, {NEED_DISK_GB["with update"]} GB with an update)')
 
     v = sys.version_info
-    add('ok' if v >= (3, 12) else 'fail', 'Python', f'{v.major}.{v.minor}.{v.micro} (the Mac build wants 3.14 for zstd in the standard library)'
-        if v < (3, 14) else f'{v.major}.{v.minor}.{v.micro}')
+    add('ok' if v >= (3, 14) else 'fail', 'Python', f'{v.major}.{v.minor}.{v.micro}' +
+        ('' if v >= (3, 14) else ' (TOTK build scripts use Python 3.14 standard-library zstd support)'))
     for tool, why in (('clang', 'compile the runtime and SPIRV-Cross'), ('make', 'build hactool'), ('pkg-config', 'find libraries')):
         add('ok' if shutil.which(tool) else 'fail', tool, shutil.which(tool) or f'missing: needed to {why}')
     add('ok' if shutil.which('dotnet') else 'warn', 'dotnet', shutil.which('dotnet') or
@@ -72,7 +86,9 @@ def check(work):
         add('ok' if ver else 'fail', lib, ver or f'missing development package for {pkg} (Debian/Ubuntu: apt install libsdl2-dev libvulkan-dev libopus-dev libvpx-dev)')
 
     names = gpus()
-    if names:
+    if names and all(re.search(r'llvmpipe|lavapipe|swiftshader|software rasterizer', name, re.I) for name in names):
+        add('warn', 'GPU (Vulkan)', '; '.join(names) + ' (software renderer, compile/test only; not a playable GPU)')
+    elif names:
         add('ok', 'GPU (Vulkan)', '; '.join(names))
     elif Path('/dev/dri').exists():
         add('warn', 'GPU (Vulkan)', 'a /dev/dri exists but vulkaninfo found no device (install vulkan-tools and the Mesa or NVIDIA driver)')
@@ -84,6 +100,8 @@ def check(work):
         add('warn', 'Audio', 'no sound server or /dev/snd found')
     display = os.environ.get('WAYLAND_DISPLAY') or os.environ.get('DISPLAY')
     add('ok' if display else 'warn', 'Display', display or 'no WAYLAND_DISPLAY or DISPLAY: no desktop session in this shell')
+    ollama = ollama_status()
+    add('ok' if 'running;' in ollama else 'warn', 'Ollama', ollama)
 
     icon = {'ok': 'OK  ', 'warn': 'WARN', 'fail': 'FAIL'}
     for status, item, detail in rows:
