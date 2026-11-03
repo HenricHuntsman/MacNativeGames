@@ -5,11 +5,13 @@ on:
     paths:
       - '.github/workflows/linux-port-foundation.yml'
       - 'linux_port/**'
+      - 'games/totk/runtime/audio_mixer.c'
       - 'games/totk/runtime/controller_map.h'
   pull_request:
     paths:
       - '.github/workflows/linux-port-foundation.yml'
       - 'linux_port/**'
+      - 'games/totk/runtime/audio_mixer.c'
       - 'games/totk/runtime/controller_map.h'
   workflow_dispatch:
 

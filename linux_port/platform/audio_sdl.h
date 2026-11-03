@@ -8,9 +8,12 @@
 
 typedef struct LinuxAudio LinuxAudio;
 typedef struct { uint64_t played, underruns, overruns, trims; } LinuxAudioStats;
+typedef void (*LinuxAudioRender)(void *ctx, float *out, unsigned frames);
 
 /* channels: 2, 6, or 0 to use 6 only when the output device has at least 6. NULL when no device can be opened. */
 LinuxAudio *audio_open(int rate, int channels);
+LinuxAudio *audio_open_callback(int rate, int channels, LinuxAudioRender render, void *ctx);
+int audio_detect_channels(void);
 int audio_channels(const LinuxAudio *a);
 /* Interleaved float frames. Returns how many fit; the rest are dropped by the caller or retried. */
 size_t audio_write(LinuxAudio *a, const float *frames, size_t n);
