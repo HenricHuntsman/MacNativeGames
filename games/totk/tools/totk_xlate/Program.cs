@@ -200,10 +200,21 @@ static class SwshXlate
             while ((line = Console.ReadLine()) != null)
             {
                 if (line.Length == 0) continue;
-                var req = JsonNode.Parse(line).AsObject(); var job = req["job"].AsObject(); string o = (string)req["out"];
-                Directory.CreateDirectory(o);
-                string err = Translate(job, o);
-                Console.WriteLine(err == null ? $"ok {(string)job["key"]}" : $"fail {(string)job["key"]} {err}");
+                // Keep the service alive if a job is malformed. The client receives one
+                // reply per nonempty line and can submit a corrected request next.
+                try
+                {
+                    var req = JsonNode.Parse(line).AsObject();
+                    var job = req["job"].AsObject();
+                    string o = (string)req["out"];
+                    Directory.CreateDirectory(o);
+                    string err = Translate(job, o);
+                    Console.WriteLine(err == null ? $"ok {(string)job["key"]}" : $"fail {(string)job["key"]} {err}");
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine($"fail request {e.GetType().Name}: {e.Message.Split('\n')[0]}");
+                }
                 Console.Out.Flush();
             }
             return 0;
