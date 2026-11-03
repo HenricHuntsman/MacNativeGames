@@ -1,0 +1,32 @@
+name: Linux port foundation
+
+on:
+  push:
+    paths:
+      - '.github/workflows/linux-port-foundation.yml'
+      - 'linux_port/**'
+      - 'games/totk/runtime/controller_map.h'
+  pull_request:
+    paths:
+      - '.github/workflows/linux-port-foundation.yml'
+      - 'linux_port/**'
+      - 'games/totk/runtime/controller_map.h'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-foundation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Install Linux test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libsdl2-dev libvulkan-dev mesa-vulkan-drivers libopus-dev libvpx-dev libvorbis-dev libogg-dev libzstd-dev
+      - name: Run game-data-free Linux foundation tests
+        run: bash linux_port/verify_foundation.sh
