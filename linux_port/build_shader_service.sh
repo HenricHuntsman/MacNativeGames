@@ -19,4 +19,5 @@ DOTNET_CLI_TELEMETRY_OPTOUT=1 dotnet publish "$ROOT/games/totk/tools/totk_xlate/
   -c Release -r "$RID" -p:PublishAot=true -p:InvariantGlobalization=true \
   -p:RyuSrc="$ROOT/vendor/ryujinx" -o "$OUT"
 "$OUT/totk_xlate" --serve </dev/null
+python3 "$ROOT/linux_port/test_shader_service_protocol.py" "$OUT/totk_xlate"
 printf 'built Linux SPIR-V translator: %s/totk_xlate\n' "$OUT"
