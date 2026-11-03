@@ -122,13 +122,52 @@ def check(work):
     return 1 if fails else 0
 
 
+def audit():
+    repo = Path(__file__).resolve().parents[1]
+    runtime = repo / 'games' / 'totk' / 'runtime'
+    gfx = repo / 'games' / 'totk' / 'third_party' / 'd2r_gfx' / 'gfx' / 'nvn'
+    metal = gfx / 'nvn_mtl.m'
+    objc_files = sorted(runtime.glob('*.m'))
+    objc_lines = sum(len(p.read_text(errors='replace').splitlines()) for p in objc_files)
+    objc_gfx_files = sorted(gfx.glob('*.m'))
+    objc_gfx_lines = sum(len(p.read_text(errors='replace').splitlines()) for p in objc_gfx_files)
+    metal_text = metal.read_text(errors='replace') if metal.is_file() else ''
+    metal_lines = len(metal_text.splitlines())
+    metal_tokens = len(re.findall(r'\bMTL4?\w+', metal_text))
+    mach_pattern = re.compile(r'\b(?:mach_vm_[a-z_]+|vm_region_recurse|mach_time\w*|task_threads|mach_thread_self|mach_port_[a-z_]+|vm_read_overwrite|vm_write)\b')
+    mach_files = []
+    mach_total = 0
+    for path in sorted(runtime.glob('*.[ch]')):
+        text = path.read_text(errors='replace')
+        count = len(mach_pattern.findall(text))
+        if count:
+            mach_files.append((path.relative_to(repo), count))
+            mach_total += count
+    build_app = (repo / 'build_app.py').read_text(errors='replace')
+    totk_make = (repo / 'games' / 'totk' / 'Makefile').read_text(errors='replace')
+
+    print('TOTK Linux source audit (no game data read)')
+    print(f'Metal renderer: {metal.relative_to(repo)} ({metal_lines:,} lines, {metal_tokens:,} Metal API tokens)')
+    print(f'Objective-C runtime files: {len(objc_files)} ({objc_lines:,} lines): ' + ', '.join(p.name for p in objc_files))
+    print(f'Objective-C graphics files: {len(objc_gfx_files)} ({objc_gfx_lines:,} lines): ' + ', '.join(p.name for p in objc_gfx_files))
+    print(f'Mach/Apple VM and thread references: {mach_total} across {len(mach_files)} C/header files')
+    for path, count in mach_files:
+        print(f'  {path}: {count}')
+    print(f'Mac builder markers: build_app.py has {build_app.count("xcrun ")} xcrun and {build_app.count("codesign")} codesign references; TOTK Makefile has {totk_make.count("xcrun ")} xcrun and {totk_make.count("-framework")} framework link flags')
+    print('Already integrated: SDL audio callback -> TOTK mixer ring (Linux syntax-tested).')
+    print('Still standalone: vm_linux helpers, SDL gamepad adapter, Vulkan clear/readback probe.')
+    print('Still missing: Linux Horizon service/loader integration, Cocoa/input replacement, full NVN-to-Vulkan renderer, Linux shader translator build, and ARM64-to-x86_64 execution.')
+    return 0
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     sub = p.add_subparsers(dest='command', required=True)
     c = sub.add_parser('check', help='detect this system and report what the port needs')
     c.add_argument('--work', type=Path, default=Path.home() / 'MacNativeGames-work', help='where the build would write (disk space is checked here)')
+    sub.add_parser('audit', help='measure remaining TOTK Linux port blockers in source')
     args = p.parse_args()
-    return check(args.work)
+    return audit() if args.command == 'audit' else check(args.work)
 
 
 if __name__ == '__main__':
