@@ -200,10 +200,23 @@ static class SwshXlate
             while ((line = Console.ReadLine()) != null)
             {
                 if (line.Length == 0) continue;
-                var req = JsonNode.Parse(line).AsObject(); var job = req["job"].AsObject(); string o = (string)req["out"];
-                Directory.CreateDirectory(o);
-                string err = Translate(job, o);
-                Console.WriteLine(err == null ? $"ok {(string)job["key"]}" : $"fail {(string)job["key"]} {err}");
+                string key = "<unknown>";
+                try
+                {
+                    JsonObject req = JsonNode.Parse(line)?.AsObject() ?? throw new JsonException("request must be a JSON object");
+                    JsonObject job = req["job"]?.AsObject() ?? throw new JsonException("request is missing a job object");
+                    key = (string)job["key"] ?? key;
+                    string o = req["out"]?.GetValue<string>() ?? throw new JsonException("request is missing an output directory");
+                    Directory.CreateDirectory(o);
+                    string err = Translate(job, o);
+                    Console.WriteLine(err == null ? $"ok {key}" : $"fail {key} {err}");
+                }
+                catch (Exception e)
+                {
+                    string message = e.Message.Replace('\r', ' ').Replace('\n', ' ');
+                    if (message.Length > 300) message = message[..300];
+                    Console.WriteLine($"fail {key} {e.GetType().Name}: {message}");
+                }
                 Console.Out.Flush();
             }
             return 0;

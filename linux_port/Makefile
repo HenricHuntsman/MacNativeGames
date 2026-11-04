@@ -9,7 +9,7 @@ vk_clear: vk_clear.c
 clean:
 	rm -f vk_clear platform/vm_test platform/audio_test platform/gamepad_test vulkan/clear_probe
 
-.PHONY: clean test test-audio test-gamepad test-vulkan test-runtime-audio shader-service-linux
+.PHONY: clean test test-audio test-gamepad test-vulkan test-runtime-audio shader-service-linux test-shader-service
 
 platform/vm_test: platform/vm_test.c platform/vm_linux.c platform/vm_linux.h
 	$(CC) $(CFLAGS) -o $@ platform/vm_test.c platform/vm_linux.c
@@ -44,3 +44,6 @@ test-runtime-audio:
 
 shader-service-linux:
 	bash build_shader_service.sh
+
+test-shader-service: shader-service-linux
+	python3 tests/test_shader_translate.py
