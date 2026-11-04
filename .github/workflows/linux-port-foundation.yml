@@ -1,36 +1,36 @@
-name: Linux port foundation (headless)
+name: Linux port foundation
 
 on:
   push:
     paths:
-      - 'linux_port/**'
-      - 'games/totk/runtime/controller_map.h'
-      - 'games/totk/runtime/gamepad_layout.h'
       - '.github/workflows/linux-port-foundation.yml'
+      - 'linux_port/**'
+      - 'games/totk/runtime/audio_mixer.c'
+      - 'games/totk/runtime/controller_map.h'
   pull_request:
     paths:
-      - 'linux_port/**'
-      - 'games/totk/runtime/controller_map.h'
-      - 'games/totk/runtime/gamepad_layout.h'
       - '.github/workflows/linux-port-foundation.yml'
+      - 'linux_port/**'
+      - 'games/totk/runtime/audio_mixer.c'
+      - 'games/totk/runtime/controller_map.h'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  foundation:
-    name: Compile and run Linux platform smoke tests
+  linux-foundation:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          lfs: false
-          submodules: false
-      - name: Install Linux build dependencies
+          persist-credentials: false
+      - name: Install Linux test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libsdl2-dev libvulkan-dev
-      - name: Run headless regression tests and compile Vulkan example
+          sudo apt-get install -y build-essential clang zlib1g-dev pkg-config libsdl2-dev libvulkan-dev mesa-vulkan-drivers libopus-dev libvpx-dev libvorbis-dev libogg-dev libzstd-dev
+      - name: Run game-data-free Linux foundation tests
         run: bash linux_port/verify_foundation.sh
+      - name: Build Linux NativeAOT SPIR-V translator
+        run: make -C linux_port shader-service-linux

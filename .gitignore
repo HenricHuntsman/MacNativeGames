@@ -32,3 +32,4 @@ linux_port/vk_clear
 linux_port/platform/vm_test
 linux_port/platform/audio_test
 linux_port/platform/gamepad_test
+linux_port/vulkan/clear_probe

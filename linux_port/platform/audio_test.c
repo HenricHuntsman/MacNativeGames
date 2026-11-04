@@ -4,7 +4,16 @@
 #include <SDL2/SDL.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdatomic.h>
 #include <string.h>
+
+typedef struct { _Atomic uint64_t frames; } CallbackState;
+
+static void silent_render(void *ctx, float *out, unsigned frames) {
+    CallbackState *state = ctx;
+    memset(out, 0, (size_t)frames * 2 * sizeof(float));
+    atomic_fetch_add(&state->frames, frames);
+}
 
 int main(int argc, char **argv) {
     const int rate = 48000, seconds = 2, block = rate * 5 / 1000;
@@ -29,5 +38,20 @@ int main(int argc, char **argv) {
     audio_close(a);
     int ok = st.played > (uint64_t)rate * seconds * 8 / 10;
     printf(ok ? "audio_test: passed\n" : "audio_test: FAILED (the device consumed too little)\n");
-    return !ok;
+    if (!ok) return 1;
+
+    CallbackState callback_state = {0};
+    a = audio_open_callback(rate, 2, silent_render, &callback_state);
+    if (!a) { fprintf(stderr, "audio_test: callback device open failed\n"); return 1; }
+    SDL_Delay(120);
+    audio_stats(a, &st);
+    uint64_t rendered = atomic_load(&callback_state.frames);
+    audio_close(a);
+    printf("audio_test: direct callback rendered %llu frames\n", (unsigned long long)rendered);
+    if (rendered < (uint64_t)rate / 20 || st.played < rendered) {
+        fprintf(stderr, "audio_test: FAILED (direct callback did not run)\n");
+        return 1;
+    }
+    printf("audio_test: callback mode passed\n");
+    return 0;
 }

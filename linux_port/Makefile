@@ -7,16 +7,19 @@ vk_clear: vk_clear.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDLIBS)
 
 clean:
-	rm -f vk_clear platform/vm_test platform/audio_test platform/gamepad_test
+	rm -f vk_clear platform/vm_test platform/audio_test platform/gamepad_test vulkan/clear_probe
 
-.PHONY: clean
+.PHONY: clean test test-audio test-gamepad test-vulkan test-runtime-audio shader-service-linux
 
 platform/vm_test: platform/vm_test.c platform/vm_linux.c platform/vm_linux.h
 	$(CC) $(CFLAGS) -o $@ platform/vm_test.c platform/vm_linux.c
 
-test: platform/vm_test platform/gamepad_test
+test: platform/vm_test platform/gamepad_test platform/audio_test vulkan/clear_probe
 	./platform/vm_test
 	./platform/gamepad_test
+	SDL_AUDIODRIVER=dummy ./platform/audio_test --silent
+	./vulkan/clear_probe
+	$(MAKE) test-runtime-audio
 
 platform/audio_test: platform/audio_test.c platform/audio_sdl.c platform/audio_sdl.h
 	$(CC) $(CFLAGS) -o $@ platform/audio_test.c platform/audio_sdl.c $(LDLIBS) -lm
@@ -29,3 +32,15 @@ platform/gamepad_test: platform/gamepad_test.c platform/gamepad_sdl.c platform/g
 
 test-gamepad: platform/gamepad_test
 	SDL_VIDEODRIVER=$${SDL_VIDEODRIVER:-dummy} ./platform/gamepad_test
+
+vulkan/clear_probe: vulkan/clear_probe.c
+	$(CC) $(CFLAGS) -o $@ $< $(shell pkg-config --libs vulkan)
+
+test-vulkan: vulkan/clear_probe
+	./vulkan/clear_probe
+
+test-runtime-audio:
+	$(CC) $(CFLAGS) -std=gnu11 -Werror -fsyntax-only ../games/totk/runtime/audio_mixer.c -I../games/totk/runtime -I../games/totk/third_party/d2r_gfx/gfx/nvn/include
+
+shader-service-linux:
+	bash build_shader_service.sh

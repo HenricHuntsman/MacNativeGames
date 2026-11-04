@@ -12,6 +12,8 @@ struct LinuxAudio {
     SDL_AudioDeviceID dev;
     int rate, channels;
     float *ring;
+    LinuxAudioRender render;
+    void *render_ctx;
     _Atomic uint64_t wr, rd, played, underruns, overruns, trims;
     _Atomic int hold, prefill_ms;
     _Atomic float volume;
@@ -26,6 +28,11 @@ static void callback(void *ctx, Uint8 *stream, int len) {
     uint64_t rd = atomic_load(&a->rd), wr = atomic_load_explicit(&a->wr, memory_order_acquire), have = wr - rd;
 
     if (atomic_load(&a->hold)) { memset(out, 0, (size_t)len); a->ready = 0; atomic_store(&a->rd, wr); return; }
+    if (a->render) {
+        a->render(a->render_ctx, out, (unsigned)frames);
+        atomic_fetch_add(&a->played, frames);
+        return;
+    }
 
     uint64_t block = (uint64_t)a->rate * BLOCK_MS / 1000;
     uint64_t prefill = (uint64_t)atomic_load(&a->prefill_ms) * (uint64_t)a->rate / 1000;
@@ -54,17 +61,23 @@ static void callback(void *ctx, Uint8 *stream, int len) {
     atomic_store_explicit(&a->rd, rd + n, memory_order_release);
 }
 
-LinuxAudio *audio_open(int rate, int channels) {
+int audio_detect_channels(void) {
+    if (!SDL_WasInit(SDL_INIT_AUDIO) && SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) { fprintf(stderr, "[audio] SDL: %s\n", SDL_GetError()); return 2; }
+    SDL_AudioSpec dev_spec;
+    return SDL_GetAudioDeviceSpec(0, 0, &dev_spec) == 0 && dev_spec.channels >= 6 ? 6 : 2;
+}
+
+static LinuxAudio *audio_open_internal(int rate, int channels, LinuxAudioRender render, void *ctx) {
     if (!SDL_WasInit(SDL_INIT_AUDIO) && SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) { fprintf(stderr, "[audio] SDL: %s\n", SDL_GetError()); return NULL; }
-    if (channels != 2 && channels != 6) {
-        SDL_AudioSpec dev_spec;
-        channels = (SDL_GetAudioDeviceSpec(0, 0, &dev_spec) == 0 && dev_spec.channels >= 6) ? 6 : 2;
-    }
+    if (channels != 2 && channels != 6) channels = audio_detect_channels();
     LinuxAudio *a = calloc(1, sizeof *a);
     if (!a) return NULL;
-    a->ring = calloc((size_t)RING_FRAMES * 6, sizeof(float));
-    if (!a->ring) { free(a); return NULL; }
+    if (!render) {
+        a->ring = calloc((size_t)RING_FRAMES * 6, sizeof(float));
+        if (!a->ring) { free(a); return NULL; }
+    }
     a->rate = rate; a->channels = channels;
+    a->render = render; a->render_ctx = ctx;
     atomic_store(&a->prefill_ms, 20); atomic_store(&a->volume, 1.0f);
 
     SDL_AudioSpec want = { .freq = rate, .format = AUDIO_F32SYS, .channels = (Uint8)channels, .samples = 512, .callback = callback, .userdata = a }, got;
@@ -75,9 +88,15 @@ LinuxAudio *audio_open(int rate, int channels) {
     return a;
 }
 
+LinuxAudio *audio_open(int rate, int channels) { return audio_open_internal(rate, channels, NULL, NULL); }
+LinuxAudio *audio_open_callback(int rate, int channels, LinuxAudioRender render, void *ctx) {
+    return render ? audio_open_internal(rate, channels, render, ctx) : NULL;
+}
+
 int audio_channels(const LinuxAudio *a) { return a->channels; }
 
 size_t audio_write(LinuxAudio *a, const float *frames, size_t n) {
+    if (a->render) return 0;
     if (atomic_load(&a->hold)) return n;   /* dropped, as the CoreAudio stage does while held */
     uint64_t wr = atomic_load(&a->wr), rd = atomic_load_explicit(&a->rd, memory_order_acquire);
     uint64_t room = RING_FRAMES - (wr - rd);
