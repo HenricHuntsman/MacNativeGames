@@ -3,6 +3,7 @@ name: Linux NativeAOT shader service protocol
 on:
   pull_request:
     paths:
+      - 'linux_port/Makefile'
       - 'linux_port/build_shader_service.sh'
       - 'linux_port/test_shader_service_protocol.py'
       - 'games/totk/tools/totk_xlate/**'
