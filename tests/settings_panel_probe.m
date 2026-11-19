@@ -821,12 +821,24 @@ int main(int argc, const char **argv) { @autoreleasepool {
            [menu(@"User this run").titleOfSelectedItem isEqualToString:@"Local"]);
     shows(@"User (from the next launch)", @"Local");
     assert(settingsPanel.controllerTargets.count == 3);
-    {   /* The panel is as tall as its tallest page below the key bindings, the user page's two rows included. */
+    {   /* Verify that both regular and compact row layouts fit inside their pages. */
         NSUInteger perPage[SETTINGS_PAGES] = {0};
-        for (TOTKSettingRow *r in settingsPanel.allRows) perPage[r.page]++;
-        NSUInteger tallest = 0;
-        for (NSInteger page = 0; page < SETTINGS_PAGE_BINDINGS; page++) if (perPage[page] > tallest) tallest = perPage[page];
-        assert(settingsPanel.frame.size.height >= SETTINGS_TOP + tallest * SETTINGS_ROW_H + SETTINGS_BOTTOM - 1);
+        CGFloat previousBottom[SETTINGS_PAGES];
+        for (NSUInteger page = 0; page < settingsPanel.pages.count; page++) {
+            NSView *view = settingsPanel.pages[page];
+            previousBottom[page] = NSMaxY(view.bounds);
+        }
+        for (TOTKSettingRow *r in settingsPanel.allRows) {
+            NSView *page = settingsPanel.pages[r.page];
+            NSView *band = r.control.superview;
+            assert(band.superview == page);
+            assert(band.frame.size.height >= 24 && band.frame.size.height <= SETTINGS_ROW_H);
+            assert(NSMinY(band.frame) >= NSMinY(page.bounds));
+            assert(NSMaxY(band.frame) <= previousBottom[r.page]);
+            assert(NSMaxY(page.frame) + SETTINGS_TOP <= settingsPanel.bounds.size.height);
+            previousBottom[r.page] = NSMinY(band.frame);
+            perPage[r.page]++;
+        }
         assert(perPage[SETTINGS_PAGE_USERS] == 2);
     }
     NSButton *addUser = settingsPanel.userButtons[0];
